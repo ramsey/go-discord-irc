@@ -88,7 +88,7 @@ type ConnectParams struct {
 
 func (v *Varys) Connect(params ConnectParams, _ *struct{}) error {
 	uid := string(params.UID)
-	conn := irc.IRC(params.Nick, uid[len(uid)-9:])
+	conn := irc.IRC(params.Nick, uid[:9])
 	// conn.Debug = true
 	conn.RealName = params.RealName
 
