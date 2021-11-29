@@ -124,6 +124,9 @@ func main() {
 	viper.SetDefault("max_nick_length", ircnick.MAXLENGTH)
 	maxNickLength := viper.GetInt("max_nick_length")
 
+	viper.SetDefault("ident_port", uint16(10113))
+	identPort := viper.GetInt("ident_port")
+
 	if webIRCPass == "" {
 		log.Warnln("webirc_pass is empty")
 	}
@@ -172,6 +175,7 @@ func main() {
 		CooldownDuration:           time.Second * time.Duration(cooldownDuration),
 		ShowJoinQuit:               showJoinQuit,
 		MaxNickLength:              maxNickLength,
+		IdentPort:                  identPort,
 
 		Debug:         *debugMode,
 		DebugPresence: *debugPresence,

@@ -2,6 +2,7 @@
 discord_token: abc.def.ghi
 irc_server_name: irc
 irc_server: localhost:6697
+ident_server: 10113
 guild_id: 315277951597936640
 
 # Default is as below
