@@ -8,7 +8,6 @@ import (
 
 	"github.com/mozillazg/go-unidecode"
 	"github.com/pkg/errors"
-
 	ircnick "github.com/qaisjp/go-discord-irc/irc/nick"
 	"github.com/qaisjp/go-discord-irc/irc/varys"
 	irc "github.com/qaisjp/go-ircevent"
@@ -41,10 +40,10 @@ func newIRCManager(bridge *Bridge) (*IRCManager, error) {
 	err := m.varys.Setup(varys.SetupParams{
 		UseTLS:             !conf.NoTLS,
 		InsecureSkipVerify: conf.InsecureSkipVerify,
-
-		Server:         conf.IRCServer,
-		ServerPassword: conf.IRCServerPass,
-		WebIRCPassword: conf.WebIRCPass,
+		Server:             conf.IRCServer,
+		ServerPassword:     conf.IRCServerPass,
+		WebIRCPassword:     conf.WebIRCPass,
+		IdentServer:        bridge.identServer,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to set up params: %w", err)
@@ -295,14 +294,16 @@ func sanitiseNickname(nick string) string {
 
 	// Replace bad characters with underscores
 	for i, c := range []byte(nick) {
-		if !ircnick.IsNickChar(c) || ircnick.IsFakeNickChar(c) {
+		// Restrict nicknames to alphanumeric, for cleaner presentation in IRC.
+		//if !ircnick.IsNickChar(c) || ircnick.IsFakeNickChar(c) {
+		if !ircnick.IsLetter(c) && !ircnick.IsDigit(c) {
 			newNick[i] = ' '
 		}
 	}
 
 	// Now every invalid character has been replaced with a space (just some invalid character)
-	// Lets replace each sequence of invalid characters with a single underscore
-	newNick = regexp.MustCompile(` +`).ReplaceAllLiteral(newNick, []byte{'_'})
+	// Lets replace each sequence of invalid characters with an empty string
+	newNick = regexp.MustCompile(` +`).ReplaceAllLiteral(newNick, []byte(""))
 
 	return string(newNick)
 }
@@ -313,15 +314,10 @@ func (m *IRCManager) generateNickname(discord DiscordUser) string {
 	newNick := nick + suffix
 
 	useFallback := len(newNick) > m.bridge.Config.MaxNickLength || m.bridge.ircListener.DoesUserExist(newNick)
-	// log.WithFields(log.Fields{
-	// 	"length":      len(newNick) > ircnick.MAXLENGTH,
-	// 	"useFallback": useFallback,
-	// }).Infoln("nickgen: fallback?")
 
 	if !useFallback {
 		guild, err := m.bridge.discord.Session.State.Guild(m.bridge.Config.GuildID)
 		if err != nil {
-			// log.Fatalln("nickgen: guild not found when generating nickname")
 			return ""
 		}
 
@@ -341,7 +337,6 @@ func (m *IRCManager) generateNickname(discord DiscordUser) string {
 			}
 
 			if strings.EqualFold(sanitiseNickname(name), nick) {
-				// log.WithField("member", member).Infoln("nickgen: using fallback because of discord")
 				useFallback = true
 				break
 			}
@@ -354,26 +349,14 @@ func (m *IRCManager) generateNickname(discord DiscordUser) string {
 		suffix = m.bridge.Config.Separator + discriminator + suffix
 
 		// Maximum length of a username but without the suffix
-		length := ircnick.MAXLENGTH - len(suffix)
+		length := m.bridge.Config.MaxNickLength - len(suffix)
 		if length >= len(username) {
 			length = len(username)
-			// log.Infoln("nickgen: maximum length limit not reached")
 		}
 
 		newNick = username[:length] + suffix
-		// log.WithFields(log.Fields{
-		// 	"nick":     discord.Nick,
-		// 	"username": discord.Username,
-		// 	"newNick":  newNick,
-		// }).Infoln("nickgen: resultant nick after falling back")
 		return newNick
 	}
-
-	// log.WithFields(log.Fields{
-	// 	"nick":     discord.Nick,
-	// 	"username": discord.Username,
-	// 	"newNick":  newNick,
-	// }).Infoln("nickgen: resultant nick WITHOUT falling back")
 
 	return newNick
 }

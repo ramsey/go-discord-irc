@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gobwas/glob"
 	"github.com/pkg/errors"
+	"github.com/qaisjp/go-discord-irc/ident"
 	"github.com/qaisjp/go-discord-irc/irc/varys"
 	irc "github.com/qaisjp/go-ircevent"
 	log "github.com/sirupsen/logrus"
@@ -68,6 +70,9 @@ type Config struct {
 	// Maximum Nicklength for irc server
 	MaxNickLength int
 
+	// Port to listen on for the ident server
+	IdentPort int
+
 	Debug         bool
 	DebugPresence bool
 }
@@ -79,6 +84,7 @@ type Bridge struct {
 	discord     *discordBot
 	ircListener *ircListener
 	ircManager  *IRCManager
+	identServer *ident.Server
 
 	mappings       []Mapping
 	ircChannelKeys map[string]string // From "#test" to "password"
@@ -247,6 +253,11 @@ func New(conf *Config) (*Bridge, error) {
 
 	var err error
 
+	dib.identServer, err = ident.NewServer(conf.IdentPort)
+	if err != nil {
+		return nil, errors.Wrap(err, "Could not create ident server")
+	}
+
 	dib.discord, err = newDiscord(dib, conf.DiscordBotToken, conf.GuildID)
 	if err != nil {
 		return nil, errors.Wrap(err, "Could not create discord bot")
@@ -283,7 +294,7 @@ func (b *Bridge) Open() (err error) {
 		return errors.Wrap(err, "can't open discord")
 	}
 
-	err = b.ircListener.Connect(b.Config.IRCServer)
+	err = b.waitForIRCConnection(b.Config.IRCServer)
 	if err != nil {
 		return errors.Wrap(err, "can't open irc connection")
 	}
@@ -360,6 +371,31 @@ func (b *Bridge) GetMappingByDiscord(channel string) (Mapping, bool) {
 		}
 	}
 	return Mapping{}, false
+}
+
+func (b *Bridge) waitForIRCConnection(server string) (err error) {
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		log.Infof("Connecting to IRC server %s", server)
+		err = b.ircListener.Connect(server)
+		if err == nil {
+			b.identServer.Bind(b.ircListener.Connection, "discord")
+		}
+		time.AfterFunc(time.Second, func() {
+			wg.Done()
+		})
+	}()
+
+	wg.Wait()
+
+	if err != nil {
+		return err
+	}
+
+	log.Infof("Connected to IRC server %s", server)
+	return
 }
 
 var emojiRegex = regexp.MustCompile("(:[a-zA-Z_-]+:)")

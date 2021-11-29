@@ -8,8 +8,12 @@ import (
 	"crypto/tls"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
+	"github.com/qaisjp/go-discord-irc/ident"
 	irc "github.com/qaisjp/go-ircevent"
+	log "github.com/sirupsen/logrus"
 )
 
 type Varys struct {
@@ -52,10 +56,10 @@ type Client interface {
 type SetupParams struct {
 	UseTLS             bool // Whether we should use TLS
 	InsecureSkipVerify bool // Controls tls.Config.InsecureSkipVerify, if using TLS
-
-	Server         string
-	ServerPassword string
-	WebIRCPassword string
+	Server             string
+	ServerPassword     string
+	WebIRCPassword     string
+	IdentServer        *ident.Server
 }
 
 func (v *Varys) Setup(params SetupParams, _ *struct{}) error {
@@ -74,12 +78,10 @@ func (v *Varys) GetUIDToNicks(_ struct{}, result *map[string]string) error {
 }
 
 type ConnectParams struct {
-	UID string
-
-	Nick     string
-	Username string
-	RealName string
-
+	UID          string
+	Nick         string
+	Username     string
+	RealName     string
 	WebIRCSuffix string
 
 	// TODO(qaisjp): does not support net/rpc!!!!
@@ -117,14 +119,48 @@ func (v *Varys) Connect(params ConnectParams, _ *struct{}) error {
 		conn.AddCallback(eventcode, callback)
 	}
 
-	err := conn.Connect(v.connConfig.Server)
+	err := v.waitForIRCConnection(conn, v.connConfig.Server, uid)
 	if err != nil {
 		return fmt.Errorf("error opening irc connection: %w", err)
 	}
 
-	v.uidToConns[params.UID] = conn
 	go conn.Loop()
 	return nil
+}
+
+func (v *Varys) waitForIRCConnection(conn *irc.Connection, server string, uid string) (err error) {
+	var portmapEntry ident.PortmapEntry
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		err = conn.Connect(server)
+		if err == nil {
+			portmapEntry = v.connConfig.IdentServer.Bind(conn, uid)
+		}
+		time.AfterFunc(time.Second, func() {
+			wg.Done()
+		})
+	}()
+
+	wg.Wait()
+
+	if err != nil {
+		return err
+	}
+
+	v.uidToConns[uid] = conn
+
+	log.WithFields(log.Fields{
+		"discordUid": portmapEntry.DiscordUid,
+		"username":   portmapEntry.Username,
+		"nickname":   portmapEntry.Nickname,
+		"localPort":  portmapEntry.LocalPort,
+		"server":     v.connConfig.Server,
+	}).Infoln("connected to IRC")
+
+	return
 }
 
 type QuitParams struct {
@@ -140,6 +176,7 @@ func (v *Varys) QuitIfConnected(params QuitParams, _ *struct{}) error {
 		}
 	}
 	delete(v.uidToConns, params.UID)
+	v.connConfig.IdentServer.Unbind(params.UID)
 	return nil
 }
 
@@ -147,9 +184,8 @@ type InterpolationParams struct {
 	Nick bool
 }
 type SendRawParams struct {
-	UID      string
-	Messages []string
-
+	UID           string
+	Messages      []string
 	Interpolation InterpolationParams
 }
 
