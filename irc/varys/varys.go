@@ -120,13 +120,26 @@ func (v *Varys) Connect(params ConnectParams, _ *struct{}) error {
 		conn.AddCallback(eventcode, callback)
 	}
 
-	err := v.waitForIRCConnection(conn, v.connConfig.Server, uid)
+	err := v.connectWithRetry(conn, v.connConfig.Server, uid)
 	if err != nil {
 		return fmt.Errorf("error opening irc connection: %w", err)
 	}
 
 	go conn.Loop()
 	return nil
+}
+
+func (v *Varys) connectWithRetry(conn *irc.Connection, server string, uid string) (err error) {
+	err = v.waitForIRCConnection(conn, server, uid)
+
+	// If we get a TLS handshake error, keep trying.
+	if err != nil && strings.Contains(err.Error(), "first record does not look like a TLS handshake") {
+		time.AfterFunc(2*time.Second, func() {
+			err = v.connectWithRetry(conn, server, uid)
+		})
+	}
+
+	return err
 }
 
 func (v *Varys) waitForIRCConnection(conn *irc.Connection, server string, uid string) (err error) {
