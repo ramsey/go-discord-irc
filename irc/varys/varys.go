@@ -93,6 +93,7 @@ func (v *Varys) Connect(params ConnectParams, _ *struct{}) error {
 	conn := irc.IRC(params.Nick, uid[:9])
 	// conn.Debug = true
 	conn.RealName = params.RealName
+	conn.PingFreq = 4 * time.Minute
 
 	// TLS things, and the server password
 	conn.Password = v.connConfig.ServerPassword
