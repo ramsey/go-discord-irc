@@ -3,6 +3,7 @@ package bridge
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	ircf "github.com/qaisjp/go-discord-irc/irc/format"
 	irc "github.com/qaisjp/go-ircevent"
@@ -18,6 +19,7 @@ type ircListener struct {
 
 func newIRCListener(dib *Bridge, webIRCPass string) *ircListener {
 	irccon := irc.IRC(dib.Config.IRCListenerName, "discord")
+	irccon.PingFreq = 4 * time.Minute
 	listener := &ircListener{irccon, dib, make(map[string]int)}
 
 	dib.SetupIRCConnection(irccon, "discord.", "fd75:f5f5:226f::")
