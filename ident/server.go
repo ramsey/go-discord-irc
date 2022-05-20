@@ -55,26 +55,31 @@ func NewServer(identPort int) (*Server, error) {
 func (server *Server) Bind(addr *irc.Connection, discordUid string) PortmapEntry {
 	localPort := server.getLocalPort(addr)
 
-	username := discordUid
-	if len([]rune(username)) > 9 {
-		username = username[:9]
-	}
-
 	existingEntry, ok := server.getPortmapEntryForLocalPort(localPort)
 
-	if ok == true && existingEntry.DiscordUid != discordUid {
-		// Someone else is already assigned this local port?
-		log.WithFields(log.Fields{
-			"existingEntry": existingEntry,
-			"localPort":     localPort,
-			"discordUid":    discordUid,
-		}).Fatalln("ident: could not bind Discord username to local port already assigned")
+	if ok == true {
+		if existingEntry.DiscordUid != discordUid {
+			// Someone else is already assigned this local port?
+			log.WithFields(log.Fields{
+				"existingEntry": existingEntry,
+				"localPort":     localPort,
+				"discordUid":    discordUid,
+				"nick":          addr.GetNick(),
+			}).Infoln("ident: different Discord user already bound to local port; freeing port, since it is no longer used")
 
-		return existingEntry
+			delete(server.portMap, existingEntry.DiscordUid)
+		} else {
+			return existingEntry
+		}
 	}
 
 	server.mutex.Lock()
 	defer server.mutex.Unlock()
+
+	username := discordUid
+	if len([]rune(username)) > 9 {
+		username = username[:9]
+	}
 
 	log.WithFields(log.Fields{
 		"port":     localPort,
