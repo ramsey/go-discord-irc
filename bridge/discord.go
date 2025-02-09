@@ -469,11 +469,11 @@ func (d *discordBot) GetAvatar(guildID, username string) (_ string) {
 
 // GetMemberNick returns the real display name for a Discord GuildMember
 func GetMemberNick(m *discordgo.Member) string {
-	if m.Nick == "" {
+	if m.User.GlobalName == "" {
 		return m.User.Username
 	}
 
-	return m.Nick
+	return m.User.GlobalName
 }
 
 // pmTargetFromContent returns an irc nick given a message sent to an IRC user via Discord
